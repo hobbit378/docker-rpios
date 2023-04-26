@@ -2,24 +2,48 @@
 
 # 1. extract RPiOS SDCard images from archive files
 # 2. extract filesystem from image and export to Docker image
+
+# We need SUDO/ROOT privileges to run
  
 set -x
 
-mkdir ./img-content
+function get_images()
+{
+    mkdir -p ./images/{content,processed}
+    
+    cd ./images
+    echo "Download images, if any"
+    
+    # download images
+    for img in $*
+    do
+        wget ${img}
+    done
+    
+    # decompress images
+    for img in ./*.xz 
+    do
+        xz -d ${img}
+    done
 
-for ar in ./images/*.xz 
- do
-    xz -d ${ar}
-done
+    cd -
+}
 
-for img in ./images/*.img 
- do
-    offset=$(fdisk -l -o Start ${img}|tail -1)
-    echo "sector offset is ${offset} ..."
-    mount -o loop,ro,offset=$((512 * ${offset})) ${img} ./img-content
-    tar -xvc -C ./img-content | docker import -c "ENTRYPOINT /bin/bash" - $(basename ${img})
-    #tar cvzf ${img}.tgz -C ./img-content .
-    umount ./img-content
-done
 
-rm -rf ./img-content
+
+function make_docker_image() {
+
+    for img in ./images/*.img 
+    do
+        arch=$(echo ${img}|cut -d- -f6)
+        offset=$(fdisk -l -o Start ${img}|tail -1)
+        echo "sector offset is ${offset} ..."
+        mount -o loop,ro,offset=$((512 * ${offset})) ${img} ./images/content
+        tar -cv -C ./images/content . | docker import --platform "linux/${arch}" -c "ENTRYPOINT /bin/bash" - $(basename ${img})
+        umount ${img}
+        mv ${img} ./images/processed
+    done
+
+}
+
+
